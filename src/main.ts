@@ -10,12 +10,13 @@ type Panel = "bookmarks" | "history" | "reading" | "notes" | "shield" | "setting
 interface QuickLink { name: string; url: string; icon: string; }
 interface Bookmark { title: string; url: string; }
 interface HistoryEntry { title: string; url: string; at: number; }
-interface Settings { accent: Accent; engine: Engine; shields: boolean; saveHistory: boolean; verticalTabs?: boolean; uiScale?: number; }
+interface Settings { accent: Accent; engine: Engine; shields: boolean; saveHistory: boolean; verticalTabs?: boolean; uiScale?: number; home?: string; restoreSession?: boolean; }
+interface SessionData { tabs: { url: string; incognito: boolean }[]; active: number; }
 
 interface RapidStore<T> { load(): Promise<T>; save(v: T): Promise<void>; }
 
 /* ── Constants / defaults ──────────────────────────────────────────────── */
-const DEFAULT_SETTINGS: Settings = { accent: "blue", engine: "google", shields: true, saveHistory: true, uiScale: 1 };
+const DEFAULT_SETTINGS: Settings = { accent: "blue", engine: "google", shields: true, saveHistory: true, uiScale: 1, home: "", restoreSession: true };
 const DEFAULT_LINKS: QuickLink[] = [
   { name: "YouTube", url: "https://youtube.com", icon: "▶" },
   { name: "Gmail", url: "https://mail.google.com", icon: "✉" },
@@ -31,6 +32,30 @@ const ENGINE_URLS: Record<Engine, string> = {
 };
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
+
+/* ── Session persistence (restore open tabs on next launch) ───────────── */
+let sessionTimer: number | undefined;
+function saveSession() {
+  clearTimeout(sessionTimer);
+  sessionTimer = window.setTimeout(() => {
+    const urlTabs = tabs.filter((t) => t.url && t.url !== "about:blank");
+    stores.session.save({
+      tabs: urlTabs.map((t) => ({ url: t.url, incognito: incognitoTabs.has(t.id) })),
+      active: Math.max(0, urlTabs.findIndex((t) => t.id === activeTabId)),
+    });
+  }, 250);
+}
+async function restoreSession() {
+  if (settings.restoreSession === false) return;
+  const s = await stores.session.load();
+  if (!s || !Array.isArray(s.tabs) || !s.tabs.length) return;
+  tabs.splice(0, tabs.length, ...s.tabs.map((x) => ({ id: tabSeq++, title: x.url ? hostOf(x.url) : "New Tab", url: x.url })));
+  s.tabs.forEach((x, i) => { if (x.incognito) incognitoTabs.add(tabs[i].id); });
+  activeTabId = tabs[Math.min(s.active, tabs.length - 1)]?.id ?? tabs[0].id;
+  const t = activeTab();
+  if (t && t.url) navigate(t.url, { record: false });
+  else focusView();
+}
 
 /* ── Small helpers ─────────────────────────────────────────────────────── */
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -56,6 +81,7 @@ const stores = {
   history: store<HistoryEntry[]>("history", []),
   notes: store<string>("notes", ""),
   reading: store<string[]>("reading", []),
+  session: store<SessionData>("session", { tabs: [], active: 0 }),
 };
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
@@ -107,6 +133,7 @@ function addTab(url = "", incognito = false) {
   activeTabId = t.id;
   paintTabs();
   if (url) navigate(url);
+  saveSession();
 }
 function closeTab(id: number) {
   const i = tabs.findIndex((t) => t.id === id);
@@ -114,10 +141,12 @@ function closeTab(id: number) {
   const [removed] = tabs.splice(i, 1);
   closedTabs.push(removed);
   incognitoTabs.delete(id);
+  navs.delete(id);
   invoke("close_tab", { tabId: id }).catch(() => {});
   if (activeTabId === id) activeTabId = tabs.length ? tabs[Math.max(0, i - 1)]?.id ?? -1 : -1;
   if (!tabs.length) addTab();
   else { paintTabs(); focusView(); }
+  saveSession();
 }
 function reopenTab() {
   const t = closedTabs.pop();
@@ -211,6 +240,7 @@ function paintTabs() {
       focusView();
     });
     el.addEventListener("auxclick", (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } });
+    bindTabDrag(el, t.id);
     (el.querySelector(".tab-title") as HTMLElement).addEventListener("mouseenter", () => { const sb = $("#sb-url"); if (sb && t.url) sb.textContent = hostOf(t.url); });
     (el.querySelector(".tab-title") as HTMLElement).addEventListener("mouseleave", () => { const sb = $("#sb-url"); if (sb) sb.textContent = ""; });
     el.querySelector(".tab-close")!.addEventListener("click", (e) => { e.stopPropagation(); closeTab(t.id); });
@@ -218,6 +248,56 @@ function paintTabs() {
   }
   syncURL();
 }
+
+/* ── Tab-strip UX: scroll-wheel + drag-to-reorder ─────────────────────── */
+let dragId: number | null = null;
+function bindTabDrag(el: HTMLElement, id: number) {
+  let moved = false, start = 0;
+  const isVert = () => document.body.classList.contains("vertical-tabs");
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest(".tab-close")) return;
+    dragId = id; moved = false;
+    start = isVert() ? e.clientY : e.clientX;
+    el.classList.add("dragging");
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (dragId !== id) return;
+    if (Math.abs((isVert() ? e.clientY : e.clientX) - start) > 5) moved = true;
+  });
+  const finish = () => {
+    el.classList.remove("dragging");
+    if (dragId !== id) return;
+    dragId = null;
+    if (!moved) return;
+    const from = tabs.findIndex((t) => t.id === id);
+    if (from === -1) return;
+    const els = $$<HTMLElement>("#tabstrip .tab");
+    const rect = el.getBoundingClientRect();
+    const line = isVert() ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+    let to = els.length - 1;
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if ((isVert() ? r.bottom : r.right) > line) { to = i; break; }
+    }
+    if (to === from) return;
+    const [t] = tabs.splice(from, 1);
+    tabs.splice(to, 0, t);
+    paintTabs();
+    saveSession();
+  };
+  el.addEventListener("pointerup", finish);
+  el.addEventListener("pointercancel", finish);
+}
+(() => {
+  const strip = $("#tabstrip");
+  strip.addEventListener("wheel", (e) => {
+    if (document.body.classList.contains("vertical-tabs")) return;
+    if (strip.scrollWidth <= strip.clientWidth) return;
+    strip.scrollLeft += e.deltaY;
+    e.preventDefault();
+  });
+})();
 
 /* ── Navigation ────────────────────────────────────────────────────────── */
 function normalize(raw: string): string {
@@ -284,6 +364,7 @@ function navigate(url: string, opts?: { record?: boolean }) {
     if (opts?.record !== false) pushNav(t, target);
     else recordNav(t, target);
     paintTabs();
+    saveSession();
     if (settings.saveHistory && !incognitoTabs.has(t.id)) {
       stores.history.load().then((h) => {
         h.unshift({ title: hostOf(target), url: target, at: Date.now() });
@@ -504,6 +585,17 @@ async function renderShield() {
 async function renderSettings() {
   sbContent.innerHTML = `
     <div class="ds-section">
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-home"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Home page</div><div class="ds-sub">Opened by the Home button &amp; Alt+Home</div></div>
+      </div>
+      <div class="ds-div"></div>
+      <div class="field" style="padding:6px 12px 10px"><input id="s-home" type="text" spellcheck="false" placeholder="https://example.com (blank = New Tab)" value="${esc(settings.home ?? "")}" /></div>
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-reload"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Restore session</div><div class="ds-sub">Reopen your tabs from the last run</div></div>
+        <label class="switch"><input type="checkbox" id="s-restore" ${settings.restoreSession === false ? "" : "checked"}><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="ds-section">
       <div class="ds-row"><span class="ds-ico"><svg><use href="#i-star"/></svg></span>
         <div class="ds-meta"><div class="ds-title">Accent theme</div><div class="ds-sub">Pick the window&apos;s glow color</div></div>
       </div>
@@ -550,6 +642,23 @@ async function renderSettings() {
     ($("#s-scale") as HTMLInputElement).value = "100";
     applyUiScale(); $("#f-scale-label").textContent = "100%";
   });
+  const homeInput = $("#s-home") as HTMLInputElement;
+  homeInput.addEventListener("change", () => {
+    settings.home = homeInput.value.trim();
+    stores.settings.save(settings);
+    toast(settings.home ? "Home set to " + hostOf(settings.home) : "Home cleared");
+  });
+  ($("#s-restore") as HTMLInputElement).addEventListener("change", (e) => {
+    settings.restoreSession = (e.target as HTMLInputElement).checked;
+    stores.settings.save(settings);
+    toast(settings.restoreSession ? "Session restore on" : "Session restore off");
+  });
+}
+
+function goHome() {
+  const home = settings.home?.trim();
+  if (home) { const t = activeTab(); if (t) navigate(home); else addTab(home); }
+  else addTab();
 }
 
 /* ── Home (New Tab) ────────────────────────────────────────────────────── */
@@ -671,7 +780,7 @@ function bindGlobal(e: KeyboardEvent) {
   else if (e.key === "F11") ok(() => win.setFullscreen(!e.ctrlKey));
   else if (e.altKey && e.key === "ArrowLeft") ok(goBack);
   else if (e.altKey && e.key === "ArrowRight") ok(goForward);
-  else if (e.altKey && e.key === "Home") ok(() => addTab());
+  else if (e.altKey && e.key === "Home") ok(goHome);
   else if (e.key === "Escape") { closeSuggest(); $("#menu").classList.remove("open"); closeFind(); if (sidepanel.classList.contains("open")) { sidepanel.classList.remove("open"); layoutView(); } }
 }
 async function fullscreenToggle() { win.setFullscreen(!(await win.isFullscreen())); }
@@ -780,7 +889,7 @@ $("#star-btn").addEventListener("click", saveBookmark);
 $("#nav-back").addEventListener("click", goBack);
 $("#nav-fwd").addEventListener("click", goForward);
 $("#nav-reload").addEventListener("click", () => { const t = activeTab(); if (t?.url) navigate(t.url); });
-$("#nav-home").addEventListener("click", () => addTab());
+$("#nav-home").addEventListener("click", goHome);
 $("#nav-shield").addEventListener("click", () => openPanel("shield"));
 
 /* New Tab search form */
@@ -813,6 +922,7 @@ ntForm.addEventListener("submit", (e) => {
     paintTabs();
   });
   win.onResized(() => { syncMaxIcon(); layoutView(); });
+  await restoreSession();
   paintTabs();
   applyVerticalTabs();
   startClock();

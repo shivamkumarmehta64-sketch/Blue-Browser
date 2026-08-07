@@ -147,7 +147,8 @@ body::after {
   background: rgba(4,6,12,0.55); backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--border); -webkit-app-region: drag; padding: 0 8px;
 }
-#tabstrip { flex: 1; display: flex; align-items: flex-end; gap: 4px; min-width: 0; height: 100%; overflow: hidden; }
+#tabstrip { flex: 1; display: flex; align-items: flex-end; gap: 4px; min-width: 0; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabstrip::-webkit-scrollbar { display: none; }
 .tab {
   position: relative; flex: 0 1 200px; min-width: 90px; max-width: 220px; height: 34px;
   margin: 6px 0 0; display: flex; align-items: center; gap: 8px; padding: 0 10px;
