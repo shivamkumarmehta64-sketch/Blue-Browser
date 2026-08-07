@@ -1,0 +1,42 @@
+[package]
+name = "blue-browser"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "blue_browser_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# "Browser-like" release: smaller binaries and faster start/run.
+[profile.release]
+opt-level = "s"          # size optimized (smaller, less RAM for the adblock tables)
+lto = "thin"             # limited cross-crate inlining (regime between size and memory)
+codegen-units = 16
+panic = "abort"          # drop unwind tables -> smaller/faster
+strip = "symbols"        # remove debug symbols when installed
+debug = false
+
+[dependencies]
+tauri = { version = "2", features = ["unstable"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Brave adblock engine. single-thread (default) is disabled so the Engine is
+# Send+Sync and can be shared across Tauri command threads and the cosmetic server.
+adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling", "css-validation"] }
+# Minimal localhost HTTP server that serves generated cosmetic CSS to remote tabs.
+tiny_http = "0.12"
+# Light blocking HTTP client for backend-originated requests (search suggestions),
+# which avoids the browser CORS block that a webview-side `fetch` hits.
+ureq = { version = "2", features = ["json"] }
+

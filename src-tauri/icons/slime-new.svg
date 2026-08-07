@@ -1,0 +1,97 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#0b1b3a"/>
+      <stop offset="60%" stop-color="#061029"/>
+      <stop offset="100%" stop-color="#040a18"/>
+    </radialGradient>
+    <linearGradient id="slime" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6fe0ff"/>
+      <stop offset="45%" stop-color="#2fb9ff"/>
+      <stop offset="100%" stop-color="#1f7ae0"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="20" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- rounded-ish background (use full-bleed square so it tiles cleanly) -->
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- ambient glow behind slime -->
+  <circle cx="512" cy="520" r="330" fill="#2fb9ff" opacity="0.16" filter="url(#soft)"/>
+
+  <!-- slime blob -->
+  <g filter="url(#blur)">
+    <path d="M512 860
+             C 300 856 210 720 222 552
+             C 228 430 288 340 396 298
+             C 408 296 418 288 420 276
+             C 428 246 450 234 470 224
+             C 488 216 500 230 512 218
+             C 524 230 536 216 554 224
+             C 574 234 596 246 604 276
+             C 606 288 616 296 628 298
+             C 736 340 796 430 802 552
+             C 814 720 724 856 512 880
+             C 300 856 210 720 222 606"
+            fill="none"/>
+  </g>
+
+  <!-- main slime body (gooey rimuru-style) -->
+  <path d="M512 872
+           C 328 872 230 740 240 610
+           C 246 472 306 356 410 314
+           C 428 306 448 302 470 296
+           C 474 300 478 304 482 300
+           C 492 290 512 290 542 300
+           C 546 304 550 300 554 296
+           C 576 302 596 306 614 314
+           C 718 356 778 472 784 610
+           C 794 740 696 872 512 860 Z"
+        fill="url(#slime)" filter="url(#drop)"/>
+
+  <!-- top-droplets (two little 'antennae' bumps above the head) -->
+  <path d="M470 300
+           C 456 240 470 204 500 176
+           C 510 168 520 168 524 176
+           C 536 204 530 240 518 292
+           C 502 300 486 296 470 300 Z"
+        fill="url(#slime)"/>
+  <path d="M506 296
+           C 498 240 506 200 528 172
+           C 542 168 552 178 548 188
+           C 566 210 574 246 556 292
+           C 540 300 522 302 506 296 Z"
+        fill="url(#slime)" opacity="0.9" transform="translate(8,-6)"/>
+
+  <!-- large glossy highlight (top-left) -->
+  <ellipse cx="424" cy="398" rx="128" ry="150" fill="url(#shine)" opacity="0.45" transform="rotate(-24 424 398)"/>
+  <ellipse cx="452" cy="416" rx="86" ry="104" fill="#ffffff" opacity="0.5" transform="rotate(-20 452 416)"/>
+
+  <!-- cute eyes -->
+  <g fill="#081a33">
+    <ellipse cx="420" cy="548" rx="58" ry="72"/>
+    <ellipse cx="604" cy="548" rx="58" ry="72"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="398" cy="522" r="16"/>
+    <circle cx="582" cy="522" r="16"/>
+  </g>
+  <!-- blush -->
+  <g fill="#ff7ea6" opacity="0.5">
+    <ellipse cx="356" cy="622" rx="26" ry="16"/>
+    <ellipse cx="668" cy="622" rx="26" ry="16"/>
+  </g>
+
+  <!-- soft mouth -->
+  <path d="M512 640 C 512 656 500 664 484 654 C 468 644 468 626 484 616 C 500 606 512 624 512 640 Z"
+        fill="#081a33" opacity="0.65"/>
+</svg>

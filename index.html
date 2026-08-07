@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-accent="cyan">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://suggestqueries.google.com http://localhost:1420;" />
+  <title>Blue Browser</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/app-icon.png" />
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <div id="loading-bar"></div>
+  <div id="app">
+    <!-- Titlebar / tab strip (frameless drag region) -->
+    <header id="titlebar">
+      <div id="tabstrip" data-tauri-drag-region>
+        <div class="tab active" data-tauri-drag-region>
+          <span class="tab-favicon" id="fav-icon-new"><svg><use href="#i-orbit"/></svg></span>
+          <span class="tab-title">New Tab</span>
+          <button class="tab-close" title="Close tab"><svg><use href="#i-x"/></svg></button>
+        </div>
+        <button id="newtab-btn" title="New tab (Ctrl+T)"><svg><use href="#i-plus"/></svg></button>
+      </div>
+      <div id="window-controls">
+        <button class="win-btn" id="w-min" title="Minimize"><svg viewBox="0 0 12 12"><path d="M1 6h10"/></svg></button>
+        <button class="win-btn" id="w-max" title="Maximize"><svg viewBox="0 0 12 12"><path d="M2 2h8v8H2z"/></svg></button>
+        <button class="win-btn win-close" id="w-close" title="Close"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg></button>
+      </div>
+    </header>
+
+    <!-- Toolbar / omnibox -->
+    <div id="toolbar">
+      <button class="tool-btn" id="nav-back" title="Back (Alt+Left)"><svg><use href="#i-back"/></svg></button>
+      <button class="tool-btn" id="nav-fwd" title="Forward (Alt+Right)"><svg><use href="#i-fwd"/></svg></button>
+      <button class="tool-btn" id="nav-reload" title="Reload (Ctrl+R)"><svg><use href="#i-reload"/></svg></button>
+      <button class="tool-btn" id="nav-home" title="Home (Alt+Home)"><svg><use href="#i-home"/></svg></button>
+      <div id="omnibox-wrap">
+        <div id="omnibox">
+          <span id="url-security" title="Secure"><svg><use href="#i-lock"/></svg></span>
+          <input id="url-input" type="text" spellcheck="false" autocomplete="off" placeholder="Search the web or enter an address" />
+          <button id="star-btn" title="Bookmark this page (Ctrl+D)"><svg><use href="#i-star"/></svg></button>
+        </div>
+        <div id="suggest"></div>
+      </div>
+      <button class="tool-btn" id="nav-shield" title="Privacy & shields"><svg><use href="#i-shield"/></svg></button>
+      <button class="tool-btn" id="nav-menu" title="Menu"><svg><use href="#i-menu"/></svg></button>
+    </div>
+
+    <!-- Main -->
+    <div id="body">
+      <div id="rail" data-tauri-drag-region>
+        <button class="rail-btn" data-panel="newtab" title="New tab"><svg><use href="#i-orbit"/></svg></button>
+        <button class="rail-btn" data-panel="bookmarks" title="Bookmarks (Ctrl+Shift+O)"><svg><use href="#i-bookmark"/></svg></button>
+        <button class="rail-btn" data-panel="history" title="History (Ctrl+H)"><svg><use href="#i-history"/></svg></button>
+        <button class="rail-btn" data-panel="reading" title="Reading list"><svg><use href="#i-reader"/></svg></button>
+        <button class="rail-btn" data-panel="notes" title="Notes"><svg><use href="#i-notes"/></svg></button>
+        <div class="grow"></div>
+        <button class="rail-btn" data-panel="shield" title="Privacy & performance"><svg><use href="#i-shield"/></svg></button>
+        <button class="rail-btn" data-panel="settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
+      </div>
+
+      <aside id="sidepanel">
+        <div class="sb-head"><h2 id="sb-title">Panel</h2><span class="count" id="sb-count"></span></div>
+        <div id="sb-content"></div>
+        <div class="sb-actions" id="sb-actions"></div>
+      </aside>
+
+      <div id="content" data-tauri-drag-region>
+        <!-- New Tab view (Edge/Brave-style: thin hero clock + glass search + speed dial) -->
+        <div id="newtab" class="newtab">
+          <div class="nt-hero">
+            <div class="nt-clock"><span id="nt-title">--:--</span><span class="nt-ampm" id="nt-ampm"></span></div>
+            <div class="nt-date" id="nt-date"></div>
+            <p class="nt-greet" id="nt-greet">Good evening.</p>
+          </div>
+          <form id="nt-search" class="nt-search no-drag">
+            <svg><use href="#i-search"/></svg>
+            <input id="nt-input" type="text" placeholder="Search the web or type an address" autocomplete="off" spellcheck="false" />
+            <kbd>Enter</kbd>
+          </form>
+          <div class="nt-continue" id="nt-continue"></div>
+          <div class="nt-links" id="nt-links"></div>
+          <div class="nt-stats" id="nt-stats"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <footer id="statusbar">
+      <span class="ipc-badge"><span class="dot"></span>Blue ready</span>
+      <span id="sb-url"></span>
+      <span id="sb-zoom">100%</span>
+    </footer>
+  </div>
+
+  <!-- Find bar -->
+  <div id="findbar">
+    <button class="circle-btn" id="find-prev" title="Previous (Shift+Enter)"><svg><use href="#i-up"/></svg></button>
+    <input id="find-input" placeholder="Find in tab" />
+    <span id="find-count"></span>
+    <button class="circle-btn" id="find-next" title="Next (Enter)"><svg><use href="#i-down"/></svg></button>
+    <button class="circle-btn" id="find-close" title="Close (Esc)"><svg><use href="#i-x"/></svg></button>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu">
+    <div class="mi" data-m="newtab"><svg><use href="#i-orbit"/></svg>New Tab<span class="kbd">Ctrl+T</span></div>
+    <div class="mi" data-m="reopen"><svg><use href="#i-reload"/></svg>Reopen closed tab<span class="kbd">Ctrl+Shift+T</span></div>
+    <div class="mi-sep"></div>
+    <div class="mi" data-m="bookmarks"><svg><use href="#i-bookmark"/></svg>Bookmarks<span class="kbd">Ctrl+O</span></div>
+    <div class="mi" data-m="history"><svg><use href="#i-history"/></svg>History<span class="kbd">Ctrl+H</span></div>
+    <div class="mi" data-m="reading"><svg><use href="#i-reader"/></svg>Reading list</div>
+    <div class="mi" data-m="notes"><svg><use href="#i-notes"/></svg>Notes</div>
+    <div class="mi-sep"></div>
+    <div class="mi" data-m="find"><svg><use href="#i-search"/></svg>Find in page<span class="kbd">Ctrl+F</span></div>
+    <div class="mi" data-m="fullscreen"><svg><use href="#i-expand"/></svg>Fullscreen<span class="kbd">F11</span></div>
+    <div class="mi" data-m="vertical"><svg><use href="#i-layout"/></svg>Vertical tabs<span class="kbd" id="vt-kbd">Off</span></div>
+    <div class="mi-sep"></div>
+    <div class="mi" data-m="clear"><svg><use href="#i-trash"/></svg>Clear browsing data</div>
+    <div class="mi" data-m="settings"><svg><use href="#i-gear"/></svg>Settings</div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- Inline SVG sprite -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <defs>
+      <symbol id="i-orbit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="2" fill="currentColor"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></symbol>
+      <symbol id="i-fwd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+      <symbol id="i-reload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 5-3.1 8.5-7 10-3.9-1.5-7-5-7-10V6z"/><path d="M12 8v4M12 15h.01"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></symbol>
+      <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
+      <symbol id="i-reader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h13v16M6 21h14"/><path d="M8 8h6M8 12h6"/></symbol>
+      <symbol id="i-notes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5h16M4 9h10M4 13h16M4 17h8"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.88 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.88.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.09a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.88v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 15l6-6 6 6"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-layout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+    </defs>
+  </svg>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
