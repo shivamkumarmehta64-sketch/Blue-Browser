@@ -98,10 +98,12 @@ let tabSeq = 1;
 const tabs: Tab[] = [{ id: 0, title: "New Tab", url: "" }];
 let activeTabId = 0;
 const closedTabs: Tab[] = [];
+const incognitoTabs = new Set<number>();
 
-function addTab(url = "") {
+function addTab(url = "", incognito = false) {
   const t: Tab = { id: tabSeq++, title: url ? hostOf(url) : "New Tab", url };
   tabs.push(t);
+  if (incognito) incognitoTabs.add(t.id);
   activeTabId = t.id;
   paintTabs();
   if (url) navigate(url);
@@ -111,6 +113,7 @@ function closeTab(id: number) {
   if (i === -1) return;
   const [removed] = tabs.splice(i, 1);
   closedTabs.push(removed);
+  incognitoTabs.delete(id);
   invoke("close_tab", { tabId: id }).catch(() => {});
   if (activeTabId === id) activeTabId = tabs.length ? tabs[Math.max(0, i - 1)]?.id ?? -1 : -1;
   if (!tabs.length) addTab();
@@ -119,9 +122,24 @@ function closeTab(id: number) {
 function reopenTab() {
   const t = closedTabs.pop();
   if (!t) return toast("Nothing to reopen");
-  addTab(t.url);
+  addTab(t.url, incognitoTabs.has(t.id));
 }
 function activeTab() { return tabs.find((t) => t.id === activeTabId); }
+function switchTab(dir: number) {
+  if (tabs.length < 2) return;
+  const i = tabs.findIndex((t) => t.id === activeTabId);
+  const next = tabs[(i + dir + tabs.length) % tabs.length];
+  activeTabId = next.id;
+  paintTabs();
+  focusView();
+}
+function jumpTab(num: number) {
+  const t = tabs[num - 1];
+  if (!t) return;
+  activeTabId = t.id;
+  paintTabs();
+  focusView();
+}
 
 /* ── Child-webview layout ─────────────────────────────────────────────── */
 function applyVerticalTabs() {
@@ -164,16 +182,25 @@ function focusView() {
   if (t) invoke("activate_tab", { tabId: t.id }).catch(() => {});
 }
 
+function faviconHTML(t: Tab): string {
+  if (!t.url || t.url === "about:blank") {
+    return incognitoTabs.has(t.id) ? `<svg><use href="#i-incog"/></svg>` : `<svg><use href="#i-orbit"/></svg>`;
+  }
+  try {
+    const host = new URL(t.url).hostname;
+    return `<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32" alt="" draggable="false" loading="lazy">`;
+  } catch { return `<svg><use href="#i-globe"/></svg>`; }
+}
+
 function paintTabs() {
   const strip = $("#tabstrip");
   $$("#tabstrip .tab").forEach((el) => el.remove());
   for (const t of tabs) {
     const el = document.createElement("div");
-    el.className = "tab" + (t.id === activeTabId ? " active" : "");
+    el.className = "tab" + (t.id === activeTabId ? " active" : "") + (incognitoTabs.has(t.id) ? " incognito" : "");
     el.dataset.id = String(t.id);
-    const focus = t.url ? "globe" : "orbit";
     el.innerHTML = `
-      <span class="tab-favicon"><svg><use href="#i-${focus}"/></svg></span>
+      <span class="tab-favicon">${faviconHTML(t)}</span>
       <span class="tab-title"></span>
       <button class="tab-close" title="Close tab"><svg><use href="#i-x"/></svg></button>`;
     (el.querySelector(".tab-title") as HTMLElement).textContent = t.title || "New Tab";
@@ -183,6 +210,9 @@ function paintTabs() {
       paintTabs();
       focusView();
     });
+    el.addEventListener("auxclick", (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } });
+    (el.querySelector(".tab-title") as HTMLElement).addEventListener("mouseenter", () => { const sb = $("#sb-url"); if (sb && t.url) sb.textContent = hostOf(t.url); });
+    (el.querySelector(".tab-title") as HTMLElement).addEventListener("mouseleave", () => { const sb = $("#sb-url"); if (sb) sb.textContent = ""; });
     el.querySelector(".tab-close")!.addEventListener("click", (e) => { e.stopPropagation(); closeTab(t.id); });
     strip.querySelector("#newtab-btn")!.before(el);
   }
@@ -201,7 +231,48 @@ function normalize(raw: string): string {
 function hostOf(url: string): string {
   try { if (url === "about:blank") return "New Tab"; return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
-function navigate(url: string) {
+
+/* Per-tab navigation history (kept in the frontend so back/forward buttons
+ * know whether they have somewhere to go for the *active* tab). */
+interface TabNav { stack: string[]; idx: number; }
+const navs = new Map<number, TabNav>();
+function navFor(t: Tab): TabNav {
+  let n = navs.get(t.id);
+  if (!n) { n = { stack: [], idx: -1 }; navs.set(t.id, n); }
+  return n;
+}
+function pushNav(t: Tab, url: string) {
+  const n = navFor(t);
+  n.stack.length = n.idx + 1;        // drop forward entries
+  n.stack.push(url);
+  n.idx = n.stack.length - 1;
+}
+function recordNav(t: Tab, url: string) {
+  const n = navFor(t);
+  if (n.idx >= 0 && n.stack[n.idx] === url) return;   // already current
+  pushNav(t, url);
+}
+function syncNavButtons() {
+  const t = activeTab();
+  const n = t ? navFor(t) : null;
+  ($("#nav-back") as HTMLButtonElement).disabled = !n || n.idx <= 0;
+  ($("#nav-fwd") as HTMLButtonElement).disabled = !n || n.idx >= n.stack.length - 1;
+}
+function goBack() {
+  const t = activeTab();
+  const n = t ? navFor(t) : null;
+  if (!t || !n || n.idx <= 0) return;
+  n.idx--;
+  navigate(n.stack[n.idx], { record: false });
+}
+function goForward() {
+  const t = activeTab();
+  const n = t ? navFor(t) : null;
+  if (!t || !n || n.idx >= n.stack.length - 1 || n.idx === -1) return;
+  n.idx++;
+  navigate(n.stack[n.idx], { record: false });
+}
+function navigate(url: string, opts?: { record?: boolean }) {
   const target = normalize(url);
   const t = activeTab();
   if (target !== "about:blank" && t) {
@@ -210,8 +281,10 @@ function navigate(url: string) {
     invoke("open_url", { tabId: t.id, url: target, x: r.x, y: r.y, w: r.w, h: r.h }).catch((e) => toast("Couldn't open: " + e));
     t.url = target;
     t.title = hostOf(target);
+    if (opts?.record !== false) pushNav(t, target);
+    else recordNav(t, target);
     paintTabs();
-    if (settings.saveHistory) {
+    if (settings.saveHistory && !incognitoTabs.has(t.id)) {
       stores.history.load().then((h) => {
         h.unshift({ title: hostOf(target), url: target, at: Date.now() });
         if (h.length > 200) h.length = 200;
@@ -248,10 +321,15 @@ let cur = -1;
 
 function syncURL() {
   const t = activeTab();
+  const incognito = incognitoTabs.has(t?.id ?? -1);
   const u = t?.url && t.url !== "about:blank" ? t.url : "";
   urlInput.value = u;
+  if (incognito) urlInput.classList.add("incog");
+  else urlInput.classList.remove("incog");
+  $("#omnibox").classList.toggle("incog", incognito);
   $("#url-security use").setAttribute("href", !u || u.startsWith("https") || u.startsWith("about:") ? "#i-lock" : "#i-globe");
   syncBookmarkStar();
+  syncNavButtons();
 }
 function onSugInput(q: string) {
   clearTimeout(sugTimer);
@@ -391,34 +469,64 @@ async function renderNotes() {
 
 async function renderShield() {
   sbContent.innerHTML = `
-    <div class="card" style="cursor:default"><div class="card-meta"><div class="card-title">Shields (ad & tracker blocking)</div><div class="card-url">Network-level filtering</div></div>
-    <label class="switch"><input type="checkbox" id="sh-tog" ${settings.shields ? "checked" : ""}><span class="slider"></span></label></div>
-    <div class="card" style="cursor:default"><div class="card-meta"><div class="card-title">Save browsing history</div><div class="card-url">Keep a local history</div></div>
-    <label class="switch"><input type="checkbox" id="sh-hist" ${settings.saveHistory ? "checked" : ""}><span class="slider"></span></label></div>`;
-  $("#sh-tog").addEventListener("change", () => {
-    settings.shields = ($("#sh-tog") as HTMLInputElement).checked;
+    <div class="ds-section">
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-shield"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Shields</div><div class="ds-sub">Ad &amp; tracker network-level filtering</div></div>
+        <label class="switch"><input type="checkbox" id="sh-tog" ${settings.shields ? "checked" : ""}><span class="slider"></span></label>
+      </div>
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-history"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Browsing history</div><div class="ds-sub">Keep a local history of visited pages</div></div>
+        <label class="switch"><input type="checkbox" id="sh-hist" ${settings.saveHistory ? "checked" : ""}><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="ds-section">
+      <div class="ds-row" id="clear-row"><span class="ds-ico"><svg><use href="#i-x"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Clear browsing data</div><div class="ds-sub">Bookmarks, history and reading list</div></div>
+        <button class="sb-btn" id="sh-clear" style="flex:none;width:auto;padding:6px 14px">Clear</button>
+      </div>
+    </div>`;
+  const shEls = {
+    shTog: $("#sh-tog") as HTMLInputElement,
+    shHist: $("#sh-hist") as HTMLInputElement,
+    shClear: $("#sh-clear") as HTMLButtonElement,
+  };
+  shEls.shTog.addEventListener("change", () => {
+    settings.shields = shEls.shTog.checked;
     stores.settings.save(settings);
     toast("Shields " + (settings.shields ? "on" : "off"));
   });
-  $("#sh-hist").addEventListener("change", () => {
-    settings.saveHistory = ($("#sh-hist") as HTMLInputElement).checked;
+  shEls.shHist.addEventListener("change", () => {
+    settings.saveHistory = shEls.shHist.checked;
     stores.settings.save(settings);
   });
+  shEls.shClear.addEventListener("click", async () => { await clearAllData(); toast("Browsing data cleared"); });
 }
 async function renderSettings() {
   sbContent.innerHTML = `
-    <div class="field"><label>Accent theme</label>
-      <div class="accents">${(["blue", "cyan", "violet", "emerald", "amber", "rose"] as Accent[]).map((a) => `<span class="acc ${settings.accent === a ? "on" : ""}" data-a="${a}" style="background:var(--a-${a})"></span>`).join("")}</div>
+    <div class="ds-section">
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-star"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Accent theme</div><div class="ds-sub">Pick the window&apos;s glow color</div></div>
+      </div>
+      <div class="ds-div"></div>
+      <div class="accents" style="padding:8px 12px 10px">${(["blue", "cyan", "violet", "emerald", "amber", "rose"] as Accent[]).map((a) => `<span class="acc ${settings.accent === a ? "on" : ""}" data-a="${a}" style="background:var(--a-${a})"></span>`).join("")}</div>
     </div>
-    <div class="field"><label>Default search engine</label>
-      <select id="s-engine">${(["google", "bing", "duckduckgo"] as Engine[]).map((e) => `<option ${settings.engine === e ? "selected" : ""}>${e}</option>`).join("")}</select>
+    <div class="ds-section">
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-gear"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Default search engine</div><div class="ds-sub">Used when typing a search in the omnibox</div></div>
+      </div>
+      <div class="ds-div"></div>
+      <div class="field" style="padding:6px 12px 10px"><select id="s-engine">${(["google", "bing", "duckduckgo"] as Engine[]).map((e) => `<option ${settings.engine === e ? "selected" : ""}>${e}</option>`).join("")}</select></div>
     </div>
-    <div class="field"><label>UI scale — <span class="mono" id="f-scale-label">${Math.round(clampScale(settings.uiScale ?? 1) * 100)}%</span></label>
-      <div class="scale-row">
-        <button class="sb-btn" data-s="-1">A−</button>
+    <div class="ds-section">
+      <div class="ds-row"><span class="ds-ico"><svg><use href="#i-layout"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">UI scale — <span class="mono" id="f-scale-label">${Math.round(clampScale(settings.uiScale ?? 1) * 100)}%</span></div><div class="ds-sub">Zoom the whole interface</div></div>
+      </div>
+      <div class="ds-div"></div>
+      <div class="scale-row" style="padding:4px 12px 10px">
+        <button class="sb-btn" data-s="-1" style="flex:none">A−</button>
         <input type="range" id="s-scale" min="${Math.round(SCALE_MIN * 100)}" max="${Math.round(SCALE_MAX * 100)}" value="${Math.round(clampScale(settings.uiScale ?? 1) * 100)}" />
-        <button class="sb-btn" data-s="1">A+</button>
-        <button class="sb-btn" id="s-scale-reset">Reset</button>
+        <button class="sb-btn" data-s="1" style="flex:none">A+</button>
+        <button class="sb-btn" id="s-scale-reset" style="flex:none">Reset</button>
       </div>
     </div>`;
   $$<HTMLElement>(".acc").forEach((a) => a.addEventListener("click", () => {
@@ -544,16 +652,26 @@ function bindGlobal(e: KeyboardEvent) {
   const k = e.key.toLowerCase();
   if (mod && k === "t" && !e.shiftKey) ok(() => addTab());
   else if (mod && e.shiftKey && k === "t") ok(reopenTab);
+  else if (mod && e.shiftKey && k === "n") ok(() => addTab("", true));
   else if (mod && k === "n") ok(() => addTab());
   else if (mod && k === "l") ok(() => { urlInput.focus(); urlInput.select(); });
   else if (mod && k === "d") ok(saveBookmark);
   else if (mod && k === "f") ok(openFind);
   else if (mod && k === "h") ok(() => openPanel("history"));
   else if (mod && e.shiftKey && k === "o") ok(() => openPanel("bookmarks"));
+  else if (mod && k === "w") ok(() => { const t = activeTab(); if (t) closeTab(t.id); });
+  else if (mod && k === "tab" && !e.shiftKey) ok(() => switchTab(1));
+  else if (mod && e.shiftKey && k === "tab") ok(() => switchTab(-1));
+  else if ((mod && k === "r") || k === "f5") ok(() => { const t = activeTab(); if (t && t.url) navigate(t.url); });
+  else if (mod && k >= "1" && k <= "8") ok(() => jumpTab(+k));
+  else if (mod && e.altKey && k === "enter") ok(() => addTab(urlInput.value.trim()));
   else if (mod && (k === "=" || k === "+")) ok(() => zoomDelta(1));
   else if (mod && k === "-") ok(() => zoomDelta(-1));
   else if (mod && k === "0") ok(() => { settings.uiScale = 1; stores.settings.save(settings); applyUiScale(); toast("UI scale reset"); });
   else if (e.key === "F11") ok(() => win.setFullscreen(!e.ctrlKey));
+  else if (e.altKey && e.key === "ArrowLeft") ok(goBack);
+  else if (e.altKey && e.key === "ArrowRight") ok(goForward);
+  else if (e.altKey && e.key === "Home") ok(() => addTab());
   else if (e.key === "Escape") { closeSuggest(); $("#menu").classList.remove("open"); closeFind(); if (sidepanel.classList.contains("open")) { sidepanel.classList.remove("open"); layoutView(); } }
 }
 async function fullscreenToggle() { win.setFullscreen(!(await win.isFullscreen())); }
@@ -631,6 +749,7 @@ $$<HTMLElement>("#menu .mi").forEach((mi) => mi.addEventListener("click", () => 
   $("#menu").classList.remove("open");
   const m = mi.dataset.m;
   if (m === "newtab") addTab();
+  else if (m === "private") addTab("", true);
   else if (m === "reopen") reopenTab();
   else if (m === "find") openFind();
   else if (m === "fullscreen") fullscreenToggle();
@@ -658,10 +777,10 @@ urlInput.addEventListener("keydown", (e) => {
 urlInput.addEventListener("blur", () => window.setTimeout(closeSuggest, 140));
 $("#newtab-btn").addEventListener("click", () => { closeSuggest(); addTab(); });
 $("#star-btn").addEventListener("click", saveBookmark);
-$("#nav-home").addEventListener("click", () => addTab());
+$("#nav-back").addEventListener("click", goBack);
+$("#nav-fwd").addEventListener("click", goForward);
 $("#nav-reload").addEventListener("click", () => { const t = activeTab(); if (t?.url) navigate(t.url); });
-$("#nav-back").addEventListener("click", () => toast("No back stack in this window"));
-$("#nav-fwd").addEventListener("click", () => toast("No forward stack in this window"));
+$("#nav-home").addEventListener("click", () => addTab());
 $("#nav-shield").addEventListener("click", () => openPanel("shield"));
 
 /* New Tab search form */
@@ -683,9 +802,13 @@ ntForm.addEventListener("submit", (e) => {
     const t = tabs.find((x) => x.id === tabId);
     if (!t) return;
     surgeEnd();
+    const prev = t.url;
     t.url = url;
     if (title && title.trim()) t.title = title;
     else if (url) t.title = hostOf(url);
+    // A navigation that happened inside the webview (link click/redirect):
+    // record it unless it's the exact page we just told the webview to open.
+    if (url !== prev) recordNav(t, url);
     if (activeTabId === tabId) syncURL();
     paintTabs();
   });
