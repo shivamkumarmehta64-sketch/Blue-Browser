@@ -399,32 +399,17 @@ body.vertical-tabs #sidepanel { left: 8px; }
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
 
-/* ── New Tab page (Edge/Brave-style) ─────────────────────────────────────── */
-.newtab { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px; width: min(900px, 100%); }
+/* ── New Tab page (Chrome/Brave-style) ───────────────────────────────────── */
+.newtab { display: flex; flex-direction: column; align-items: center; gap: 26px; padding: clamp(20px, 6vh, 56px) 24px 24px; width: min(920px, 100%); }
 
-/* Hero — thin oversized clock, uppercase date, greeting below */
-.nt-hero { text-align: center; min-width: 0; position: relative; }
-.nt-hero::before {
-  content: ''; position: absolute; inset: -40% -60%; z-index: -1; pointer-events: none;
-  background: radial-gradient(50% 45% at 50% 42%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%),
-              radial-gradient(30% 26% at 20% 60%, color-mix(in srgb, var(--acc-2) 14%, transparent), transparent 70%);
-  filter: blur(28px);
-  animation: ntGlow 6s ease-in-out infinite alternate;
-}
-@keyframes ntGlow { from { opacity:.7; transform: scale(1); } to { opacity:1; transform: scale(1.06); } }
-.nt-clock {
-  display: flex; align-items: baseline; justify-content: center; gap: 12px;
-  font-family: var(--font-disp); font-size: clamp(64px, 11vw, 110px); font-weight: 600; line-height: 1;
-  letter-spacing: -0.035em;
-  background: linear-gradient(135deg, #ffffff 40%, color-mix(in srgb, var(--acc) 70%, white) 90%);
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 10px 30px rgba(0,0,0,.6)) drop-shadow(0 0 18px color-mix(in srgb, var(--acc) 35%, transparent));
-}
-.nt-ampm { font-size: clamp(16px, 2.4vw, 26px); font-weight: 300; color: var(--acc); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--acc) 50%, transparent)); }
-.nt-date { margin-top: 14px; font-size: clamp(11px, 1.4vw, 13px); font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
-.nt-greet { margin-top: 6px; font-size: clamp(15px, 2vw, 20px); font-weight: 300; color: var(--text-2); }
+/* Compact header row: wordmark left, subtle clock right */
+.nt-head { display: flex; align-items: center; justify-content: space-between; width: min(720px, 100%); padding: 0 4px; }
+.nt-brand { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; color: var(--text-2); }
+.nt-logo { width: 24px; height: 24px; color: var(--acc); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--acc) 45%, transparent)); }
+.nt-when { font-size: 11.5px; font-weight: 500; letter-spacing: 0.05em; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.nt-ampm { color: var(--acc); }
 
-.nt-search { position: relative; width: min(600px, 92%); display: flex; align-items: center; gap: 12px; padding: 0 8px 0 18px; height: 52px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--pill); box-shadow: var(--glass-shadow), var(--glow); backdrop-filter: var(--glass-blur); transition: all .2s var(--ease); }
+.nt-search { position: relative; width: min(680px, 94%); display: flex; align-items: center; gap: 12px; padding: 0 10px 0 20px; height: 54px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--pill); box-shadow: var(--glass-shadow), var(--glow); backdrop-filter: var(--glass-blur); transition: all .2s var(--ease); }
 .nt-search::before { content: ''; position: absolute; inset: -14px -18px; z-index: -1; border-radius: var(--pill); background: color-mix(in srgb, var(--acc) 9%, transparent); filter: blur(18px); opacity: .5; transition: opacity .25s var(--ease), transform .25s var(--ease); }
 .nt-search:focus-within::before, .nt-search:hover::before { opacity: .85; transform: scale(1.04); }
 .nt-search svg { width: 18px; height: 18px; color: var(--acc); flex: none; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--acc) 40%, transparent)); }
@@ -433,7 +418,17 @@ body.vertical-tabs #sidepanel { left: 8px; }
 .nt-search input::placeholder { color: var(--text-3); }
 .nt-search kbd { flex: none; font-family: var(--font); font-size: 11px; color: var(--text-3); background: var(--bg-hover); border: 1px solid var(--border); padding: 4px 8px; border-radius: 7px; margin-right: 10px; }
 
-.nt-continue { width: min(660px, 100%); margin-top: 2px; }
+/* Speed dial — Chrome-style: name under a circular tile, centering, generous gaps */
+.nt-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 26px 24px; margin-top: 6px; }
+.nt-link { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 84px; padding: 0; background: none; border: none; border-radius: 0; cursor: pointer; text-decoration: none; color: var(--text); transition: transform .18s var(--ease), opacity .18s var(--ease); }
+.nt-link:hover { background: none; border-color: transparent; transform: translateY(-3px); box-shadow: none; }
+.nt-link .ic { position: relative; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: rgba(255,255,255,0.08); color: var(--text); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); transition: all .18s var(--ease); }
+.nt-link .ic img { width: 32px; height: 32px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.nt-link:hover .ic { border-color: color-mix(in srgb, var(--acc) 70%, transparent); color: var(--acc); box-shadow: var(--glass-shadow), 0 0 16px color-mix(in srgb, var(--acc) 35%, transparent); transform: translateY(-1px); }
+.nt-link .nm { font-size: 11.5px; color: var(--text-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+.nt-link:hover .nm { color: var(--text); }
+
+.nt-continue { width: min(680px, 100%); margin-top: 14px; }
 .nt-cont-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); margin: 0 6px 8px; }
 .nt-cont-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin: 0 0 6px; border-radius: var(--r-md); background: var(--glass-bg); border: 1px solid var(--glass-border); backdrop-filter: var(--glass-blur); box-shadow: var(--glow); cursor: pointer; text-decoration: none; color: var(--text); transition: all .18s var(--ease); }
 .nt-cont-row:hover { border-color: color-mix(in srgb, var(--acc) 55%, transparent); transform: translateY(-1px); }
@@ -446,16 +441,7 @@ body.vertical-tabs #sidepanel { left: 8px; }
 .nt-cont-go svg { width: 15px; height: 15px; }
 .nt-cont-row:hover .nt-cont-go { color: var(--acc); }
 
-/* Speed dial — Chrome/Brave-style circular floating tiles, one centered row */
-.nt-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px 20px; max-width: 860px; margin-top: 4px; }
-.nt-link { display: flex; flex-direction: column; align-items: center; gap: 9px; width: 84px; padding: 0; background: none; border: none; border-radius: 0; cursor: pointer; text-decoration: none; color: var(--text); transition: transform .18s var(--ease); }
-.nt-link:hover { background: none; border-color: transparent; transform: translateY(-3px); box-shadow: none; }
-.nt-link .ic { position: relative; width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: rgba(5,8,16,0.78); color: var(--text); border: 1px solid var(--border); box-shadow: 0 6px 16px rgba(0,0,0,.45); transition: all .18s var(--ease); }
-.nt-link .ic img { width: 32px; height: 32px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
-.nt-link:hover .ic { border-color: color-mix(in srgb, var(--acc) 70%, transparent); color: var(--acc); box-shadow: 0 10px 24px rgba(0,0,0,.5), 0 0 16px color-mix(in srgb, var(--acc) 35%, transparent); text-shadow: 0 0 12px color-mix(in srgb, var(--acc) 60%, transparent); }
-.nt-link .nm { font-size: 11.5px; color: var(--text-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
-
-.nt-stats { display: flex; align-items: center; gap: 18px; margin-top: 10px; padding: 10px 22px; border-radius: var(--pill); background: var(--glass-bg); border: 1px solid var(--glass-border); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow), var(--glow); }
+.nt-stats { display: flex; align-items: center; gap: 18px; margin-top: 16px; padding: 10px 22px; border-radius: var(--pill); background: var(--glass-bg); border: 1px solid var(--glass-border); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow), var(--glow); }
 .nt-stat { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 12px; white-space: nowrap; }
 .nt-chip { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--acc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); }
 .nt-chip svg { width: 14px; height: 14px; color: var(--acc); }

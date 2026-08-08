@@ -67,20 +67,19 @@
       </aside>
 
       <div id="content">
-        <!-- New Tab view (Edge/Brave-style: thin hero clock + glass search + speed dial) -->
+        <!-- New Tab view (browser-style: header row + search + speed dial) -->
         <div id="newtab" class="newtab">
-          <div class="nt-hero">
-            <div class="nt-clock"><span id="nt-title">--:--</span><span class="nt-ampm" id="nt-ampm"></span></div>
-            <div class="nt-date" id="nt-date"></div>
-            <p class="nt-greet" id="nt-greet">Good evening.</p>
+          <div class="nt-head">
+            <span class="nt-brand"><svg class="nt-logo"><use href="#i-orbit"/></svg>Blue Browser</span>
+            <span class="nt-when"><span id="nt-title">--:--</span><span class="nt-ampm" id="nt-ampm"></span> &nbsp;&middot;&nbsp; <span id="nt-date"></span></span>
           </div>
           <form id="nt-search" class="nt-search no-drag">
             <svg><use href="#i-search"/></svg>
             <input id="nt-input" type="text" placeholder="Search the web or type an address" autocomplete="off" spellcheck="false" />
             <kbd>Enter</kbd>
           </form>
-          <div class="nt-continue" id="nt-continue"></div>
           <div class="nt-links" id="nt-links"></div>
+          <div class="nt-continue" id="nt-continue"></div>
           <div class="nt-stats" id="nt-stats"></div>
         </div>
       </div>

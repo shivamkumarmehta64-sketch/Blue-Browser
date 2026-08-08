@@ -133,6 +133,12 @@ function addTab(url = "", incognito = false) {
   activeTabId = t.id;
   paintTabs();
   if (url) navigate(url);
+  else {
+    focusView();
+    // Chrome-style: type straight into the new-tab search box.
+    const inp = $("#nt-input") as HTMLInputElement | null;
+    if (inp) window.setTimeout(() => inp.focus(), 60);
+  }
   saveSession();
 }
 function closeTab(id: number) {
@@ -687,7 +693,6 @@ function startClock() {
     $("#nt-title").textContent = ((h % 12) || 12) + ":" + String(now.getMinutes()).padStart(2, "0");
     $("#nt-ampm").textContent = h < 12 ? "AM" : "PM";
     $("#nt-date").textContent = days[now.getDay()] + ", " + months[now.getMonth()] + " " + now.getDate();
-    $("#nt-greet").textContent = h < 5 ? "Late night browsing." : h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening.";
   };
   tick();
   const int = window.setInterval(tick, 15000);
