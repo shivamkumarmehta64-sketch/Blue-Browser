@@ -59,6 +59,45 @@ fn save_store(app: AppHandle, key: String, value: Value) -> bool {
     Store::new(&app).write(&key, value)
 }
 
+/// Aggregated payload for the New Tab page in a single round-trip:
+/// quick links, bookmarks, reading list, plus recent history items
+/// and counts used by the home stats strip.
+#[tauri::command]
+fn home_data(app: AppHandle) -> Value {
+    let store = Store::new(&app);
+    let links = store.read("quicklinks");
+    let bookmarks = store.read("bookmarks");
+    let reading = store.read("reading");
+    let history = store.read("history");
+    let recents: Vec<Value> = match &history {
+        Value::Array(items) => items.iter().take(4).cloned().collect(),
+        _ => Vec::new(),
+    };
+    let bookmark_count = match &bookmarks {
+        Value::Array(a) => a.len(),
+        _ => 0,
+    };
+    let history_count = match &history {
+        Value::Array(a) => a.len(),
+        _ => 0,
+    };
+    let reading_count = match &reading {
+        Value::Array(a) => a.len(),
+        _ => 0,
+    };
+    serde_json::json!({
+        "links": links,
+        "bookmarks": bookmarks,
+        "reading": reading,
+        "recent": recents,
+        "stats": {
+            "bookmarks": bookmark_count,
+            "history": history_count,
+            "reading": reading_count,
+        },
+    })
+}
+
 /// Background-window style was dropped (June '26): tabs now render as child
 /// webviews attached to the `main` window, positioned over the content area,
 /// each wired with ad blocking + cosmetic-CSS injection + page-info reporting.
@@ -301,6 +340,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_store,
             save_store,
+            home_data,
             open_url,
             open_external,
             suggest,

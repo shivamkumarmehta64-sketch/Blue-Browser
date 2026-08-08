@@ -684,29 +684,31 @@ function goHome() {
 }
 
 /* ── Home (New Tab) ────────────────────────────────────────────────────── */
-function startClock() {
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function startGreeting() {
+  const names = [
+    "Welcome back", "Good morning", "Good afternoon", "Good evening",
+    "Hello", "Bonjour", "Hola", "Ciao", "Hey" ];
   const tick = () => {
-    const now = new Date();
-    const h = now.getHours();
-    $("#nt-title").textContent = ((h % 12) || 12) + ":" + String(now.getMinutes()).padStart(2, "0");
-    $("#nt-ampm").textContent = h < 12 ? "AM" : "PM";
-    $("#nt-date").textContent = days[now.getDay()] + ", " + months[now.getMonth()] + " " + now.getDate();
+    const h = new Date().getHours();
+    const greet = h < 5 ? "Up late, restless soul" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+    $("#nt-greet").textContent = greet + ".";
+    $("#nt-greet-sub").textContent = names[Math.floor(Math.random() * names.length)] + " — where to, captain?";
   };
   tick();
-  const int = window.setInterval(tick, 15000);
-  window.addEventListener("unload", () => clearInterval(int));
 }
-async function startStats() {
-  const [b, h, r] = await Promise.all([stores.bookmarks.load(), stores.history.load(), stores.reading.load()]);
-  const el = $("#nt-stats");
-  el.innerHTML = `
-    <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-bookmark"/></svg></span><b>${b.length}</b>&nbsp;bookmarks</span>
-    <i class="nt-sep"></i>
-    <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-history"/></svg></span><b>${Math.min(h.length, 999)}</b>&nbsp;visited</span>
-    <i class="nt-sep"></i>
-    <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-reader"/></svg></span><b>${r.length}</b>&nbsp;saved</span>`;
+const ENGINE_LABELS: Record<Engine, string> = { google: "G", bing: "B", duckduckgo: "D" };
+function paintEngine() {
+  const b = $("#nt-engine");
+  b.textContent = ENGINE_LABELS[settings.engine];
+  b.title = "Search engine: " + settings.engine + " (click to switch)";
+}
+function cycleEngine() {
+  const order: Engine[] = ["google", "bing", "duckduckgo"];
+  const i = order.indexOf(settings.engine);
+  settings.engine = order[(i + 1) % order.length];
+  stores.settings.save(settings);
+  paintEngine();
+  toast("Engine: " + settings.engine);
 }
 function ntFaviconHTML(url: string, fallback: string): string {
   try {
@@ -714,28 +716,91 @@ function ntFaviconHTML(url: string, fallback: string): string {
     return `<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64" alt="" draggable="false" loading="lazy">`;
   } catch { return esc(fallback); }
 }
-function startQuickLinks() {
-  stores.links.load().then((links) => {
-    const wrap = $("#nt-links");
-    wrap.innerHTML = "";
-    links.slice(0, 12).forEach((L) => {
-      const a = document.createElement("a");
-      a.className = "nt-link";
-      a.innerHTML = `<span class="ic">${ntFaviconHTML(L.url, L.icon)}</span><span class="nm">${esc(L.name)}</span>`;
-      a.title = L.name + " — " + L.url;
-      a.addEventListener("click", (e) => { e.preventDefault(); navigate(L.url); });
-      wrap.appendChild(a);
+function startHome() {
+  paintEngine();
+  startGreeting();
+  // Single backend round-trip for everything the new tab shows.
+  invoke<{ links?: QuickLink[]; recent?: HistoryEntry[]; stats?: { bookmarks: number; history: number; reading: number } }>("home_data")
+    .then((d) => {
+      const links = Array.isArray(d?.links) ? d.links : [];
+      const recents = Array.isArray(d?.recent) ? d.recent : [];
+      const s = d?.stats;
+      if (s) {
+        const el = $("#nt-stats");
+        el.hidden = false;
+        el.innerHTML = `
+          <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-bookmark"/></svg></span><b>${s.bookmarks}</b>&nbsp;bookmarks</span>
+          <i class="nt-sep"></i>
+          <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-history"/></svg></span><b>${Math.min(s.history, 999)}</b>&nbsp;visited</span>
+          <i class="nt-sep"></i>
+          <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-reader"/></svg></span><b>${s.reading}</b>&nbsp;saved</span>`;
+      }
+      paintLinks(links);
+      paintContinue(recents);
+    })
+    .catch(() => {
+      stores.links.load().then(paintLinks);
+      stores.history.load().then((h) => paintContinue(h));
     });
+}
+function paintLinks(links: QuickLink[]) {
+  const wrap = $("#nt-links");
+  wrap.innerHTML = "";
+  wrap.appendChild(addTile());
+  links.slice(0, 12).forEach((L) => {
+    const a = document.createElement("a");
+    a.className = "nt-link";
+    a.innerHTML = `<span class="ic">${ntFaviconHTML(L.url, L.icon)}</span><span class="nm">${esc(L.name)}</span>`;
+    a.title = L.name + " — " + L.url;
+    a.addEventListener("click", (e) => { e.preventDefault(); navigate(L.url); });
+    wrap.appendChild(a);
   });
 }
-async function startContinue() {
+function addTile(): HTMLElement {
+  const a = document.createElement("button");
+  a.className = "nt-link add-tile";
+  a.title = "Add shortcut";
+  a.innerHTML = `<span class="ic"><svg><use href="#i-plus"/></svg></span><span class="nm">Add</span>`;
+  a.addEventListener("click", () => openAddForm());
+  return a;
+}
+function openAddForm() {
+  const wrap = $("#nt-links");
+  const form = document.createElement("div");
+  form.className = "nt-links-row";
+  form.innerHTML = `
+    <div class="nt-addform">
+      <div class="row"><input id="af-name" type="text" placeholder="Name (e.g. Wikipedia)" autocomplete="off" spellcheck="false" />
+        <input id="af-url" type="text" placeholder="https://wikipedia.org" autocomplete="off" spellcheck="false" /></div>
+      <div class="row"><button class="sb-btn" id="af-save" style="flex:none">Add</button><button class="sb-btn" id="af-cancel" style="flex:none">Cancel</button></div>
+    </div>`;
+  wrap.before(form);
+  const name = $("#af-name") as HTMLInputElement;
+  const url = $("#af-url") as HTMLInputElement;
+  name.focus();
+  const close = () => form.remove();
+  $("#af-cancel").addEventListener("click", close);
+  $("#af-save").addEventListener("click", async () => {
+    const n = name.value.trim(), u = url.value.trim();
+    if (!n || !u) return toast("Name and URL required");
+    const norm = /^https?:\/\//i.test(u) ? u : "https://" + u;
+    const links = await stores.links.load();
+    if (links.some((l) => l.url === norm)) return toast("Already in shortcuts");
+    links.push({ name: n, url: norm, icon: "★" });
+    await stores.links.save(links);
+    close();
+    startHome();
+    toast("Shortcut added");
+  });
+  form.addEventListener("keydown", (e) => { if (e.key === "Enter") ($("#af-save") as HTMLButtonElement).click(); if (e.key === "Escape") close(); });
+}
+function paintContinue(recents: HistoryEntry[]) {
   const wrap = $("#nt-continue");
-  const all = await stores.history.load();
   const seen = new Set<string>();
-  const recents = all.filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true))).slice(0, 3);
-  if (!recents.length) return (wrap.style.display = "none");
-  wrap.style.display = "block";
-  wrap.innerHTML = `<div class="nt-cont-label">Continue browsing</div>` + recents.map((h) => `
+  const uniq = recents.filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true))).slice(0, 3);
+  if (!uniq.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  wrap.innerHTML = `<div class="nt-cont-label">Continue browsing</div>` + uniq.map((h: HistoryEntry) => `
     <a class="nt-cont-row" href="#" data-u="${esc(h.url)}">
       <span class="nt-cont-ic">${ntFaviconHTML(h.url, hostOf(h.url)[0]?.toUpperCase() ?? "★")}</span>
       <span class="nt-cont-meta"><span class="nt-cont-t">${esc(h.title || hostOf(h.url))}</span><span class="nt-cont-d">${esc(hostOf(h.url))}</span></span>
@@ -922,13 +987,22 @@ $("#nav-reload").addEventListener("click", () => { const t = activeTab(); if (t?
 $("#nav-home").addEventListener("click", goHome);
 $("#nav-shield").addEventListener("click", () => openPanel("shield"));
 
-/* New Tab search form */
+/* New Tab search form + engine picker */
 const ntForm = $("#nt-search") as HTMLFormElement;
 ntForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = ($("#nt-input") as HTMLInputElement).value.trim();
-  if (q) navigate(q);
+  if (!q) { ($("#nt-input") as HTMLInputElement).focus(); return; }
+  navigate(q);
 });
+const ntInput = $("#nt-input") as HTMLInputElement;
+ntInput.addEventListener("blur", () => window.setTimeout(closeSuggest, 140));
+ntInput.addEventListener("input", (e) => onSugInput((e.target as HTMLInputElement).value));
+ntInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") ntForm.requestSubmit();
+  else if (e.key === "Escape") ntInput.blur();
+});
+$("#nt-engine").addEventListener("click", cycleEngine);
 
 /* ── Init ──────────────────────────────────────────────────────────────── */
 (async function init() {
@@ -960,10 +1034,7 @@ ntForm.addEventListener("submit", (e) => {
   await restoreSession();
   paintTabs();
   applyVerticalTabs();
-  startClock();
-  startQuickLinks();
-  startStats();
-  startContinue();
+  startHome();
   syncURL();
   syncMaxIcon();
   syncBookmarkStar();
