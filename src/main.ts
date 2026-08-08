@@ -461,8 +461,15 @@ const sbContent = $("#sb-content");
 const sbActions = $("#sb-actions");
 let activePanel: Panel | null = null;
 
+function closePanel() {
+  sidepanel.classList.remove("open");
+  activePanel = null;
+  $$<HTMLElement>(".rail-btn").forEach((b) => b.classList.remove("active"));
+  layoutView();
+}
+
 function openPanel(p: Panel) {
-  if (activePanel === p && sidepanel.classList.contains("open")) { sidepanel.classList.remove("open"); layoutView(); return; }
+  if (activePanel === p && sidepanel.classList.contains("open")) { closePanel(); return; }
   activePanel = p;
   $$<HTMLElement>(".rail-btn").forEach((b) => b.classList.toggle("active", b.dataset.panel === p));
   const titles: Record<Panel, string> = { bookmarks: "Bookmarks", history: "History", reading: "Reading list", notes: "Notes", shield: "Privacy", settings: "Settings" };
@@ -687,6 +694,12 @@ async function startStats() {
     <i class="nt-sep"></i>
     <span class="nt-stat"><span class="nt-chip"><svg><use href="#i-reader"/></svg></span><b>${r.length}</b>&nbsp;saved</span>`;
 }
+function ntFaviconHTML(url: string, fallback: string): string {
+  try {
+    const host = new URL(url).hostname;
+    return `<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64" alt="" draggable="false" loading="lazy">`;
+  } catch { return esc(fallback); }
+}
 function startQuickLinks() {
   stores.links.load().then((links) => {
     const wrap = $("#nt-links");
@@ -694,7 +707,8 @@ function startQuickLinks() {
     links.slice(0, 12).forEach((L) => {
       const a = document.createElement("a");
       a.className = "nt-link";
-      a.innerHTML = `<span class="ic">${esc(L.icon)}</span><span class="nm">${esc(L.name)}</span>`;
+      a.innerHTML = `<span class="ic">${ntFaviconHTML(L.url, L.icon)}</span><span class="nm">${esc(L.name)}</span>`;
+      a.title = L.name + " — " + L.url;
       a.addEventListener("click", (e) => { e.preventDefault(); navigate(L.url); });
       wrap.appendChild(a);
     });
@@ -709,7 +723,7 @@ async function startContinue() {
   wrap.style.display = "block";
   wrap.innerHTML = `<div class="nt-cont-label">Continue browsing</div>` + recents.map((h) => `
     <a class="nt-cont-row" href="#" data-u="${esc(h.url)}">
-      <span class="nt-cont-ic">${esc(hostOf(h.url).replace(/^www\./, "")[0]?.toUpperCase() ?? "★")}</span>
+      <span class="nt-cont-ic">${ntFaviconHTML(h.url, hostOf(h.url)[0]?.toUpperCase() ?? "★")}</span>
       <span class="nt-cont-meta"><span class="nt-cont-t">${esc(h.title || hostOf(h.url))}</span><span class="nt-cont-d">${esc(hostOf(h.url))}</span></span>
       <span class="nt-cont-go"><svg><use href="#i-fwd"/></svg></span>
     </a>`).join("");
@@ -781,7 +795,7 @@ function bindGlobal(e: KeyboardEvent) {
   else if (e.altKey && e.key === "ArrowLeft") ok(goBack);
   else if (e.altKey && e.key === "ArrowRight") ok(goForward);
   else if (e.altKey && e.key === "Home") ok(goHome);
-  else if (e.key === "Escape") { closeSuggest(); $("#menu").classList.remove("open"); closeFind(); if (sidepanel.classList.contains("open")) { sidepanel.classList.remove("open"); layoutView(); } }
+  else if (e.key === "Escape") { closeSuggest(); $("#menu").classList.remove("open"); closeFind(); if (sidepanel.classList.contains("open")) closePanel(); }
 }
 async function fullscreenToggle() { win.setFullscreen(!(await win.isFullscreen())); }
 
@@ -871,9 +885,11 @@ $$<HTMLElement>("#menu .mi").forEach((mi) => mi.addEventListener("click", () => 
 /* ── Rail ──────────────────────────────────────────────────────────────── */
 $$<HTMLElement>(".rail-btn").forEach((b) => b.addEventListener("click", () => {
   const p = b.dataset.panel as Panel | "newtab";
-  if (p === "newtab") { sidepanel.classList.remove("open"); layoutView(); return; }
+  if (p === "newtab") { closePanel(); return; }
+  if (activePanel === p && sidepanel.classList.contains("open")) { closePanel(); return; }
   openPanel(p);
 }));
+$("#sb-close").addEventListener("click", closePanel);
 
 /* ── Omnibox events ────────────────────────────────────────────────────── */
 urlInput.addEventListener("input", (e) => onSugInput((e.target as HTMLInputElement).value));

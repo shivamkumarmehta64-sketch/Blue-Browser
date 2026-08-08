@@ -14,8 +14,8 @@
   <div id="app">
     <!-- Titlebar / tab strip (frameless drag region) -->
     <header id="titlebar">
-      <div id="tabstrip" data-tauri-drag-region>
-        <div class="tab active" data-tauri-drag-region>
+      <div id="tabstrip">
+        <div class="tab active">
           <span class="tab-favicon" id="fav-icon-new"><svg><use href="#i-orbit"/></svg></span>
           <span class="tab-title">New Tab</span>
           <button class="tab-close" title="Close tab"><svg><use href="#i-x"/></svg></button>
@@ -49,7 +49,7 @@
 
     <!-- Main -->
     <div id="body">
-      <div id="rail" data-tauri-drag-region>
+      <div id="rail">
         <button class="rail-btn" data-panel="newtab" title="New tab"><svg><use href="#i-orbit"/></svg></button>
         <button class="rail-btn" data-panel="bookmarks" title="Bookmarks (Ctrl+Shift+O)"><svg><use href="#i-bookmark"/></svg></button>
         <button class="rail-btn" data-panel="history" title="History (Ctrl+H)"><svg><use href="#i-history"/></svg></button>
@@ -61,12 +61,12 @@
       </div>
 
       <aside id="sidepanel">
-        <div class="sb-head"><h2 id="sb-title">Panel</h2><span class="count" id="sb-count"></span></div>
+        <div class="sb-head"><h2 id="sb-title">Panel</h2><span class="count" id="sb-count"></span><button id="sb-close" title="Close panel (Esc)"><svg><use href="#i-x"/></svg></button></div>
         <div id="sb-content"></div>
         <div class="sb-actions" id="sb-actions"></div>
       </aside>
 
-      <div id="content" data-tauri-drag-region>
+      <div id="content">
         <!-- New Tab view (Edge/Brave-style: thin hero clock + glass search + speed dial) -->
         <div id="newtab" class="newtab">
           <div class="nt-hero">
