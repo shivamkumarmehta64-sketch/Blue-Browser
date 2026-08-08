@@ -112,6 +112,7 @@ async fn open_url(
         .window();
     let label = format!("tab-{tab_id}");
     let manager = Arc::clone(adblock.inner());
+    let emit_app = app.clone();
     let cosmetic = manager.cosmetic_injection_script();
     let script = format!(
         "{cosmetic}(function(){{function r(){{try{{window.__TAURI_INTERNALS__.invoke('set_page_info',{{tabId:{tab_id},url:location.href,title:document.title}});}}catch(_){{}}}}r();document.addEventListener('DOMContentLoaded',r);}})();"
@@ -122,6 +123,12 @@ async fn open_url(
                 .on_navigation(move |target| {
                     let target = target.to_string();
                     !manager.should_block_request(&target, "", "document")
+                })
+                .on_new_window(move |url, _features| {
+                    // target=_blank / window.open: don't spawn a raw OS window —
+                    // hand the URL to the chrome so it becomes a real app tab.
+                    let _ = emit_app.emit_to("main", "new-tab-request", url.to_string());
+                    tauri::webview::NewWindowResponse::Deny
                 })
                 .initialization_script(script),
             LogicalPosition::new(x, y),

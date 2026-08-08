@@ -664,7 +664,16 @@ async function renderSettings() {
 
 function goHome() {
   const home = settings.home?.trim();
-  if (home) { const t = activeTab(); if (t) navigate(home); else addTab(home); }
+  const t = activeTab();
+  if (home) {
+    if (t) navigate(home); else addTab(home);
+    return;
+  }
+  // No custom home URL: prefer focusing an existing blank tab (avoid stacking
+  // duplicate home tabs on repeated clicks), else open one.
+  const blank = tabs.find((x) => !x.url);
+  if (blank && t?.url !== blank.url) { activeTabId = blank.id; paintTabs(); focusView(); }
+  else if (blank) { focusView(); }
   else addTab();
 }
 
@@ -885,7 +894,7 @@ $$<HTMLElement>("#menu .mi").forEach((mi) => mi.addEventListener("click", () => 
 /* ── Rail ──────────────────────────────────────────────────────────────── */
 $$<HTMLElement>(".rail-btn").forEach((b) => b.addEventListener("click", () => {
   const p = b.dataset.panel as Panel | "newtab";
-  if (p === "newtab") { closePanel(); return; }
+  if (p === "newtab") { closePanel(); addTab(); return; }
   if (activePanel === p && sidepanel.classList.contains("open")) { closePanel(); return; }
   openPanel(p);
 }));
@@ -936,6 +945,11 @@ ntForm.addEventListener("submit", (e) => {
     if (url !== prev) recordNav(t, url);
     if (activeTabId === tabId) syncURL();
     paintTabs();
+  });
+  listen<string>("new-tab-request", (e) => {
+    const url = e.payload;
+    if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) return;
+    addTab(url);
   });
   win.onResized(() => { syncMaxIcon(); layoutView(); });
   await restoreSession();
