@@ -70,6 +70,7 @@
 
       <button class="tool-btn" id="nav-shield" title="Privacy & Shields">
         <svg><use href="#i-shield"/></svg>
+        <span class="badge" id="shield-badge" hidden></span>
         <span class="tooltip">Shields</span>
       </button>
       <button class="tool-btn" id="nav-download" title="Downloads (Ctrl+J)">
@@ -212,6 +213,18 @@
   <div id="download-bar">
     <div id="dl-items"></div>
     <button id="dl-clear">Clear all</button>
+  </div>
+
+  <!-- Command palette -->
+  <div id="palette-overlay" hidden>
+    <div id="palette">
+      <div class="pal-input-row">
+        <span class="pal-ic"><svg><use href="#i-search"/></svg></span>
+        <input id="pal-input" type="text" placeholder="Type a command…" spellcheck="false" autocomplete="off" />
+        <kbd>Esc</kbd>
+      </div>
+      <div id="pal-list"></div>
+    </div>
   </div>
 
   <!-- Main menu -->

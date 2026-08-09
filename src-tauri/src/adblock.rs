@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::RwLock;
 
 use adblock::lists::{FilterSet, ParseOptions};
@@ -40,6 +40,10 @@ pub struct AdblockManager {
     /// Small bounded cache: request-url -> block decision, keyed by a light
     /// composite so it can survive per-request setup.
     block_cache: std::sync::Mutex<std::collections::HashMap<String, bool>>,
+    /// Ever-increasing session counters so the UI can show a Brave-style
+    /// "ads & trackers blocked" badge. Reset only on app start / explicit call.
+    ads_blocked: AtomicU64,
+    trackers_blocked: AtomicU64,
 }
 
 impl Default for AdblockManager {
@@ -57,6 +61,8 @@ impl AdblockManager {
             port: AtomicU16::new(0),
             cosmetic_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             block_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            ads_blocked: AtomicU64::new(0),
+            trackers_blocked: AtomicU64::new(0),
         }
     }
 
@@ -95,12 +101,33 @@ impl AdblockManager {
         };
         let engine = self.engine.read().unwrap();
         let v = engine.check_network_request(&req).should_block();
+        if v {
+            match request_type {
+                // Treat script/xhr/pixel-style traffic as trackers unless it
+                // is a document; everything else counts as an "ad".
+                "script" | "xmlhttprequest" | "web_socket" | "websocket" | "ping" | "media" => {
+                    self.trackers_blocked.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => {
+                    self.ads_blocked.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
         let mut cache = self.block_cache.lock().unwrap();
         cache.insert(key, v);
         if cache.len() > 1024 {
             cache.clear();
         }
         v
+    }
+
+    /// Session blocker totals for the privacy/shields badge. Never decremented
+    /// until the tab session restarts.
+    pub fn blocked_totals(&self) -> (u64, u64) {
+        (
+            self.ads_blocked.load(Ordering::Relaxed),
+            self.trackers_blocked.load(Ordering::Relaxed),
+        )
     }
 
     /// Renders the cosmetic (element-hiding) CSS required for `url`.

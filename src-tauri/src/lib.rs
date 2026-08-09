@@ -544,6 +544,13 @@ fn shields_status(adblock: tauri::State<'_, Arc<AdblockManager>>) -> bool {
     adblock.shields_enabled()
 }
 
+/// Ad-blocking: session-long "ads & trackers blocked" totals for the badge
+/// in the chrome UI.
+#[tauri::command]
+fn privacy_stats(adblock: tauri::State<'_, Arc<AdblockManager>>) -> (u64, u64) {
+    adblock.blocked_totals()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let adblock = Arc::new(AdblockManager::new());
@@ -570,6 +577,7 @@ pub fn run() {
             get_class_css,
             set_shields,
             shields_status,
+            privacy_stats,
             set_tab_bounds,
             activate_tab,
             close_tab,

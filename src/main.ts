@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 
 /* ── Types ────────────────────────────────────────────────────────────────── */
 type Accent = "blue" | "cyan" | "violet" | "emerald" | "amber" | "rose";
+type ThemeMode = "dark" | "light" | "system";
 type Engine = "google" | "bing" | "duckduckgo";
 type Panel = "bookmarks" | "history" | "reading" | "notes" | "shield" | "settings" | "downloads";
 
@@ -13,6 +14,7 @@ interface HistoryEntry { title: string; url: string; at: number; }
 interface Settings {
   accent: Accent; engine: Engine; shields: boolean; saveHistory: boolean;
   verticalTabs?: boolean; uiScale?: number; home?: string; restoreSession?: boolean;
+  theme?: ThemeMode;
 }
 interface SessionData { tabs: { url: string; incognito: boolean; pinned?: boolean }[]; active: number; }
 interface DownloadItem { id: string; name: string; url: string; progress: number; done: boolean; path?: string; }
@@ -22,7 +24,7 @@ interface RapidStore<T> { load(): Promise<T>; save(v: T): Promise<void>; }
 /* ── Defaults ─────────────────────────────────────────────────────────────── */
 const DEFAULT_SETTINGS: Settings = {
   accent: "blue", engine: "google", shields: true, saveHistory: true,
-  uiScale: 1, home: "", restoreSession: true,
+  uiScale: 1, home: "", restoreSession: true, theme: "system",
 };
 const DEFAULT_LINKS: QuickLink[] = [
   { name: "YouTube",   url: "https://youtube.com",        icon: "▶" },
@@ -566,24 +568,86 @@ function syncURL() {
 function onSugInput(q: string) {
   clearTimeout(sugTimer);
   if (!q.trim()) return closeSuggest();
-  sugTimer = window.setTimeout(() => buildSuggest(q.trim()), 200);
+  sugTimer = window.setTimeout(() => buildSuggest(q.trim()), 150);
 }
+
+/* ── Frecency local suggestions (bookmarks + history) ────────────────────── */
+interface SugRow { text: string; url: string; icon: string; hint?: string; visits?: number; last?: number; }
+
+function frecencyScore(visits: number, lastAt: number, bookmarked: boolean): number {
+  const days = (Date.now() - lastAt) / 86400000;
+  const recency = days < 1 ? 5 : days < 7 ? 3 : days < 30 ? 1.5 : 0.5;
+  const freq = Math.min(10, visits);
+  return recency * (1 + freq) * (bookmarked ? 2 : 1);
+}
+async function getLocalHits(q: string): Promise<SugRow[]> {
+  const ql = q.toLowerCase();
+  const urlLike = /^[a-z][a-z0-9+.-]*:\/\//i.test(q) || q.includes(".") || q.startsWith("localhost");
+  const [bms, hist] = await Promise.all([stores.bookmarks.load(), stores.history.load()]);
+  const bmUrls = new Set<string>();
+  const rows: SugRow[] = bms.map((b) => {
+    bmUrls.add(b.url);
+    return { text: b.title || b.url, url: b.url, icon: "#i-bookmark", hint: b.url, visits: 1, last: Date.now() };
+  });
+  const histMap = new Map<string, { visits: number; lastAt: number }>();
+  hist.forEach((h) => {
+    const e = histMap.get(h.url);
+    if (e) { e.visits++; e.lastAt = Math.max(e.lastAt, h.at); }
+    else histMap.set(h.url, { visits: 1, lastAt: h.at });
+  });
+  histMap.forEach((e, u) => {
+    if (!bmUrls.has(u)) rows.push({ text: hostOf(u), url: u, icon: "#i-history", hint: hostOf(u), visits: e.visits, last: e.lastAt });
+  });
+  const scored: { row: SugRow; score: number }[] = [];
+  rows.forEach((r) => {
+    const title = r.text.toLowerCase();
+    const url = r.url.toLowerCase();
+    const matchTitle = title.includes(ql);
+    const matchUrl = url.includes(ql);
+    if (!matchTitle && !matchUrl) return;
+    let score = frecencyScore(r.visits ?? 1, r.last ?? 0, bmUrls.has(r.url));
+    if (urlLike && url.startsWith(ql)) score += 4;        // typed URL prefix win
+    else if (matchUrl) score += 1.5;
+    if (title.startsWith(ql)) score += 0.75;
+    scored.push({ row: r, score });
+  });
+  scored.sort((a, b) => b.score - a.score || a.row.text.localeCompare(b.row.text));
+  return scored.slice(0, 6).map((s) => s.row);
+}
+
 async function buildSuggest(q: string) {
-  let items: string[] = [q];
+  const locals = await getLocalHits(q);
+  let remote: string[] = [q];
   try {
-    items = await invoke<string[]>("suggest", { query: q, engine: settings.engine });
-    if (!items.length) items = [q];
+    const r = await invoke<string[]>("suggest", { query: q, engine: settings.engine });
+    if (r.length) remote = r;
   } catch { /* offline */ }
-  sugEl.innerHTML = `<div class="sugg-group">Suggestions</div>`;
-  items.forEach((it, i) => {
+  sugEl.innerHTML = "";
+  const appendSug = (it: SugRow) => {
     const d = document.createElement("div");
     d.className = "sugg-item";
-    d.innerHTML = `<span class="sugg-ic"><svg><use href="#i-search"/></svg></span><span class="sugg-txt"></span><span class="sugg-hint">↵</span>`;
-    (d.querySelector(".sugg-txt") as HTMLElement).textContent = it;
-    d.dataset.i = String(i);
-    d.addEventListener("click", () => commit(it));
+    d.innerHTML = `<span class="sugg-ic"><svg><use href="${it.icon}"/></svg></span><span class="sugg-txt"></span><span class="sugg-hint"></span>`;
+    (d.querySelector(".sugg-txt") as HTMLElement).textContent = it.text;
+    (d.querySelector(".sugg-hint") as HTMLElement).textContent = it.hint ?? "";
+    d.dataset.url = it.url;
+    d.addEventListener("click", () => commit(it.url));
     sugEl.appendChild(d);
-  });
+  };
+  if (locals.length) {
+    const g = document.createElement("div");
+    g.className = "sugg-group";
+    g.textContent = "From bookmarks & history";
+    sugEl.appendChild(g);
+    locals.forEach(appendSug);
+    if (remote.length) {
+      const g2 = document.createElement("div");
+      g2.className = "sugg-group";
+      g2.textContent = "Suggestions";
+      sugEl.appendChild(g2);
+    }
+  }
+  remote.forEach((it) => appendSug({ text: it, url: it, icon: "#i-search", hint: "↵" }));
+  if (!locals.length && !remote.length) sugEl.innerHTML = `<div class="empty" style="border:none">No results</div>`;
   cur = -1;
   sugEl.classList.add("open");
 }
@@ -591,7 +655,11 @@ function navSug(dir: number) {
   const items = $$<HTMLElement>(".sugg-item");
   cur = Math.min(items.length - 1, Math.max(0, cur + dir));
   items.forEach((it, i) => it.classList.toggle("cur", i === cur));
-  if (items[cur]) (urlInput as HTMLInputElement).value = items[cur].querySelector(".sugg-txt")!.textContent!;
+  if (items[cur]) {
+    const el = items[cur];
+    if (el.classList.contains("cur") && (el.dataset.url)) urlInput.value = el.dataset.url;
+    else (urlInput as HTMLInputElement).value = el.querySelector(".sugg-txt")!.textContent!;
+  }
 }
 function closeSuggest() { sugEl.classList.remove("open"); cur = -1; }
 function commit(q: string) {
@@ -727,8 +795,36 @@ async function renderNotes() {
 }
 
 /* Privacy / Shield panel */
+let shieldAds = 0, shieldTrackers = 0;
+async function refreshShieldBadge(silent = false) {
+  try {
+    const [ads, trk] = await invoke<[number, number]>("privacy_stats");
+    shieldAds = ads; shieldTrackers = trk;
+    const total = ads + trk;
+    const badge = $("#shield-badge");
+    badge.hidden = total === 0;
+    badge.textContent = total > 999 ? (total / 1000).toFixed(1) + "k" : String(total);
+    if (!silent) updateShieldCounts();
+  } catch { /* backend not ready */ }
+}
+const refreshShieldStats = () => refreshShieldBadge(true);
+function updateShieldCounts() {
+  const span = $("#sh-count");
+  if (span) span.textContent = `${shieldAds + shieldTrackers}`;
+  const sub = $("#sh-count-sub");
+  if (sub) sub.textContent = `${shieldAds} ads · ${shieldTrackers} trackers this session`;
+}
 async function renderShield() {
+  await refreshShieldStats();
   sbContent.innerHTML = `
+    <div class="ds-section shield-hero">
+      <div class="ds-row">
+        <span class="ds-ico"><svg><use href="#i-shield"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Shields up</div>
+          <div class="ds-sub" id="sh-count-sub">Checking…</div></div>
+        <div class="shield-count" id="sh-count">0</div>
+      </div>
+    </div>
     <div class="ds-section">
       <div class="ds-row">
         <span class="ds-ico"><svg><use href="#i-shield"/></svg></span>
@@ -749,6 +845,7 @@ async function renderShield() {
         <button class="sb-btn" id="sh-clear" style="flex:none;width:auto;padding:6px 14px">Clear</button>
       </div>
     </div>`;
+  updateShieldCounts();
   ($("#sh-tog") as HTMLInputElement).addEventListener("change", (e) => {
     settings.shields = (e.target as HTMLInputElement).checked;
     stores.settings.save(settings);
@@ -803,6 +900,14 @@ async function renderSettings() {
     </div>
     <div class="ds-section">
       <div class="ds-row">
+        <span class="ds-ico"><svg><use href="#i-gear"/></svg></span>
+        <div class="ds-meta"><div class="ds-title">Theme</div><div class="ds-sub">Interface brightness</div></div>
+      </div>
+      <div class="ds-div"></div>
+      <div class="field" style="padding:8px 12px 12px"><select id="s-theme">${(["system","light","dark"] as ThemeMode[]).map((t) => `<option ${(settings.theme ?? "system") === t ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+    </div>
+    <div class="ds-section">
+      <div class="ds-row">
         <span class="ds-ico"><svg><use href="#i-star"/></svg></span>
         <div class="ds-meta"><div class="ds-title">Accent color</div><div class="ds-sub">Theme accent color</div></div>
       </div>
@@ -837,6 +942,12 @@ async function renderSettings() {
     stores.settings.save(settings);
     a.parentElement!.querySelectorAll(".acc").forEach((x) => x.classList.toggle("on", x === a));
   }));
+  // Theme
+  ($("#s-theme") as HTMLSelectElement).addEventListener("change", (e) => {
+    settings.theme = (e.target as HTMLSelectElement).value as ThemeMode;
+    stores.settings.save(settings);
+    applyTheme();
+  });
   // Engine
   ($("#s-engine") as HTMLSelectElement).addEventListener("change", (e) => {
     settings.engine = (e.target as HTMLSelectElement).value as Engine;
@@ -878,6 +989,30 @@ function applyUiScale() {
   const s = Math.max(0.75, Math.min(1.4, settings.uiScale ?? 1));
   ($("#app") as HTMLElement).style.zoom = String(s);
   layoutView();
+}
+
+/* ── Theme (dark / light / system) ───────────────────────────────────────── */
+function systemPrefersDark(): boolean {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function applyTheme() {
+  const mode: ThemeMode = settings.theme ?? "system";
+  const resolved = mode === "system" ? (systemPrefersDark() ? "dark" : "light") : mode;
+  document.documentElement.dataset.theme = resolved;
+}
+function cycleTheme() {
+  const order: ThemeMode[] = ["system", "light", "dark"];
+  settings.theme = order[(order.indexOf(settings.theme ?? "system") + 1) % order.length];
+  stores.settings.save(settings);
+  applyTheme();
+  paintTheme();
+  toast("Theme: " + settings.theme);
+}
+function paintTheme() {
+  const b = $("#nt-theme");
+  if (b) b.textContent = settings.theme ?? "system";
+  const sel = $("#s-theme") as HTMLSelectElement | null;
+  if (sel) sel.value = settings.theme ?? "system";
 }
 
 /* ── New Tab page ─────────────────────────────────────────────────────────── */
@@ -1232,6 +1367,98 @@ $("#find-prev").addEventListener("click", () => gotoFind(false));
 $("#find-close").addEventListener("click", closeFind);
 $("#findbar").addEventListener("keydown", (e) => { if (e.key === "Escape") closeFind(); });
 
+/* ── Command Palette (Brave/Arc-style Ctrl+Space) ────────────────────────── */
+interface PalCmd { id: string; label: string; kbd?: string; icon: string; run: () => void; }
+function buildPaletteCommands(): PalCmd[] {
+  return [
+    { id: "new-tab", label: "New Tab", kbd: "Ctrl+T", icon: "#i-orbit", run: () => addTab() },
+    { id: "private", label: "New Private Tab", kbd: "Ctrl+Shift+N", icon: "#i-incog", run: () => addTab("", true) },
+    { id: "reopen", label: "Reopen Closed Tab", kbd: "Ctrl+Shift+T", icon: "#i-reload", run: reopenTab },
+    { id: "next-tab", label: "Next Tab", kbd: "Ctrl+Tab", icon: "#i-plus", run: () => switchTab(1) },
+    { id: "prev-tab", label: "Previous Tab", kbd: "Ctrl+Shift+Tab", icon: "#i-minus", run: () => switchTab(-1) },
+    { id: "close-tab", label: "Close Tab", kbd: "Ctrl+W", icon: "#i-x", run: () => { const t = activeTab(); if (t) closeTab(t.id); } },
+    { id: "back", label: "Back", kbd: "Alt+←", icon: "#i-back", run: goBack },
+    { id: "forward", label: "Forward", kbd: "Alt+→", icon: "#i-fwd", run: goForward },
+    { id: "reload", label: "Reload Page", kbd: "Ctrl+R", icon: "#i-reload", run: () => { const t = activeTab(); if (t?.url) navigate(t.url); } },
+    { id: "home", label: "Go Home", kbd: "Alt+Home", icon: "#i-home", run: goHome },
+    { id: "focus-url", label: "Focus Address Bar", kbd: "Ctrl+L", icon: "#i-search", run: () => { urlInput.focus(); urlInput.select(); } },
+    { id: "find", label: "Find in Page", kbd: "Ctrl+F", icon: "#i-search", run: openFind },
+    { id: "reader", label: "Toggle Reader Mode", icon: "#i-reader", run: toggleReaderMode },
+    { id: "bookmark", label: "Bookmark This Page", kbd: "Ctrl+D", icon: "#i-star", run: saveBookmark },
+    { id: "read-list", label: "Save to Reading List", icon: "#i-reader", run: saveToReading },
+    { id: "zoom-in", label: "Zoom In", icon: "#i-plus", run: zoomIn },
+    { id: "zoom-out", label: "Zoom Out", icon: "#i-minus", run: zoomOut },
+    { id: "zoom-reset", label: "Reset Zoom", kbd: "Ctrl+0", icon: "#i-expand", run: zoomReset },
+    { id: "vertical", label: "Toggle Vertical Tabs", icon: "#i-layout", run: toggleVerticalTabs },
+    { id: "fullscreen", label: "Toggle Fullscreen", kbd: "F11", icon: "#i-expand", run: fullscreenToggle },
+    { id: "theme", label: "Cycle Theme (System/Light/Dark)", icon: "#i-gear", run: cycleTheme },
+    { id: "shields", label: "Toggle Ad & Tracker Shields", icon: "#i-shield", run: async () => {
+        settings.shields = !settings.shields;
+        stores.settings.save(settings);
+        invoke("set_shields", { enabled: settings.shields }).catch(() => {});
+        toast("Shields " + (settings.shields ? "on" : "off"));
+      } },
+    { id: "clear", label: "Clear Browsing Data", icon: "#i-trash", run: () => clearAllData().then(() => toast("Browsing data cleared")) },
+    { id: "open-bookmarks", label: "Open Bookmarks", icon: "#i-bookmark", run: () => openPanel("bookmarks") },
+    { id: "open-history", label: "Open History", icon: "#i-history", run: () => openPanel("history") },
+    { id: "open-downloads", label: "Open Downloads", icon: "#i-download", run: () => openPanel("downloads") },
+    { id: "open-reading", label: "Open Reading List", icon: "#i-reader", run: () => openPanel("reading") },
+    { id: "open-notes", label: "Open Notes", icon: "#i-notes", run: () => openPanel("notes") },
+    { id: "open-shield", label: "Open Privacy Panel", icon: "#i-shield", run: () => openPanel("shield") },
+    { id: "open-settings", label: "Open Settings", icon: "#i-gear", run: () => openPanel("settings") },
+  ];
+}
+let palCmds: PalCmd[] = [];
+let palCur = -1;
+const palOverlay = $("#palette-overlay");
+const palInput = $("#pal-input") as HTMLInputElement;
+const palList = $("#pal-list");
+
+function openPalette() {
+  palCmds = buildPaletteCommands();
+  palCur = -1;
+  palInput.value = "";
+  palOverlay.hidden = false;
+  palList.innerHTML = "";
+  renderPalList("");
+  palInput.focus();
+}
+function closePalette() { palOverlay.hidden = true; }
+function renderPalList(q: string) {
+  const query = q.trim().toLowerCase();
+  const items = query
+    ? palCmds.filter((c) => c.label.toLowerCase().includes(query) || c.id.includes(query))
+    : palCmds;
+  if (!items.length) { palList.innerHTML = `<div class="pal-empty">No matching commands</div>`; palCur = -1; return; }
+  palList.innerHTML = items.map((c, i) => `
+    <div class="pal-item${i === palCur ? " cur" : ""}" data-i="${i}">
+      <svg><use href="${c.icon}"/></svg>
+      <span>${esc(c.label)}</span>${c.kbd ? `<span class="kbd">${c.kbd}</span>` : ""}
+    </div>`).join("");
+  $$<HTMLElement>("#pal-list .pal-item").forEach((el) => el.addEventListener("click", () => {
+    const c = items[+el.dataset.i!];
+    closePalette();
+    c.run();
+  }));
+}
+function palRunCurrent() {
+  const items = $$<HTMLElement>("#pal-list .pal-item");
+  if (!items.length) return;
+  const i = Math.min(Math.max(0, palCur), items.length - 1);
+  palCur = i;
+  renderPalList(palInput.value);
+  const el = $$<HTMLElement>("#pal-list .pal-item")[i];
+  if (el) el.click();
+}
+palInput.addEventListener("input", () => { palCur = -1; renderPalList(palInput.value); });
+palInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); closePalette(); }
+  else if (e.key === "Enter") { e.preventDefault(); palRunCurrent(); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); palCur = (palCur + 1) % Math.max(1, $$<HTMLElement>("#pal-list .pal-item").length); renderPalList(palInput.value); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); const n = Math.max(1, $$<HTMLElement>("#pal-list .pal-item").length); palCur = (palCur - 1 + n) % n; renderPalList(palInput.value); }
+});
+palOverlay.addEventListener("mousedown", (e) => { if (e.target === palOverlay) closePalette(); });
+
 /* ── Menu ─────────────────────────────────────────────────────────────────── */
 $("#nav-menu").addEventListener("click", (e) => { e.stopPropagation(); $("#menu").classList.toggle("open"); });
 document.addEventListener("click", () => $("#menu").classList.remove("open"));
@@ -1303,6 +1530,11 @@ $("#nt-engine").addEventListener("click", cycleEngine);
 
 /* ── Global keyboard shortcuts ───────────────────────────────────────────── */
 function bindGlobal(e: KeyboardEvent) {
+  if (!palOverlay.hidden) {
+    // Palette owns keyboard while open; Escape closes it.
+    if (e.key === "Escape") closePalette();
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey;
   const ok = (f: () => void) => { e.preventDefault(); f(); };
   const k = e.key.toLowerCase();
@@ -1326,6 +1558,7 @@ function bindGlobal(e: KeyboardEvent) {
   else if (mod && k === "-")                     ok(zoomOut);
   else if (mod && k === "0")                     ok(zoomReset);
   else if (e.key === "F11")                      ok(() => getWin()?.setFullscreen(!e.ctrlKey));
+  else if ((e.key === " " && e.ctrlKey && !e.shiftKey) || e.key === "F1") ok(openPalette);
   else if (e.altKey && e.key === "ArrowLeft")    ok(goBack);
   else if (e.altKey && e.key === "ArrowRight")   ok(goForward);
   else if (e.altKey && e.key === "Home")         ok(goHome);
@@ -1341,6 +1574,8 @@ function bindGlobal(e: KeyboardEvent) {
 (async function init() {
   settings = { ...DEFAULT_SETTINGS, ...(await stores.settings.load()) };
   document.documentElement.dataset.accent = settings.accent;
+  applyTheme();
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
   // Bind window controls AFTER Tauri IPC is ready
   bindWindowControls();
   invoke("set_shields", { enabled: settings.shields }).catch(() => {});
@@ -1393,6 +1628,9 @@ function bindGlobal(e: KeyboardEvent) {
   syncMaxIcon();
   syncBookmarkStar();
   urlInput.focus();
+  // Poll occasionally so the shield badge reflects newly blocked requests.
+  refreshShieldBadge();
+  window.setInterval(() => refreshShieldBadge(), 2000);
 })();
 
 export {};
